@@ -8,8 +8,18 @@
   </head>
   <body>
     <header>
-      <h1>Mergington High School</h1>
-      <h2>Extracurricular Activities</h2>
+      <div class="header-title">
+        <h1>Mergington High School</h1>
+        <h2>Extracurricular Activities</h2>
+      </div>
+      <div class="account-control">
+        <button id="account-button" class="account-button" type="button" aria-label="Teacher account" aria-expanded="false" aria-controls="account-menu" title="Teacher account">&#128100;</button>
+        <div id="account-menu" class="account-menu" hidden>
+          <p id="account-status">Student view</p>
+          <button id="login-open-button" type="button">Teacher login</button>
+          <button id="logout-button" type="button" hidden>Log out</button>
+        </div>
+      </div>
     </header>
 
     <main>
@@ -23,7 +33,8 @@
 
       <section id="signup-container">
         <h3>Sign Up for an Activity</h3>
-        <form id="signup-form">
+        <p id="signup-access-message" class="info">Teacher login is required to manage registrations.</p>
+        <form id="signup-form" hidden>
           <div class="form-group">
             <label for="email">Student Email:</label>
             <input type="email" id="email" required placeholder="your-email@mergington.edu" />
@@ -40,6 +51,25 @@
         <div id="message" class="hidden"></div>
       </section>
     </main>
+
+    <dialog id="login-dialog" aria-labelledby="login-title">
+      <form id="login-form">
+        <h2 id="login-title">Teacher login</h2>
+        <div class="form-group">
+          <label for="teacher-username">Username:</label>
+          <input type="text" id="teacher-username" name="username" autocomplete="username" required />
+        </div>
+        <div class="form-group">
+          <label for="teacher-password">Password:</label>
+          <input type="password" id="teacher-password" name="password" autocomplete="current-password" required />
+        </div>
+        <p id="login-message" class="login-message" role="status"></p>
+        <div class="dialog-actions">
+          <button type="submit">Log in</button>
+          <button id="cancel-login" class="secondary-button" type="button">Cancel</button>
+        </div>
+      </form>
+    </dialog>
 
     <footer>
       <p>&copy; 2026 Mergington High School</p>
