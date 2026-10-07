@@ -5,14 +5,101 @@ A super simple FastAPI application that allows students to view and sign up
 for extracurricular activities at Mergington High School.
 """
 
-from fastapi import FastAPI, HTTPException
+import json
+import os
+import secrets
+import time
+from pathlib import Path
+
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
+from pydantic import BaseModel
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
-import os
-from pathlib import Path
+
+from teacher_auth import load_teacher_credentials, verify_password
 
 app = FastAPI(title="Mergington High School API",
               description="API for viewing and signing up for extracurricular activities")
+
+TEACHER_CREDENTIALS_FILE = Path(__file__).with_name("teachers.json")
+SESSION_COOKIE = "teacher_session"
+SESSION_MAX_AGE = 8 * 60 * 60
+teacher_sessions: dict[str, tuple[str, float]] = {}
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+def get_authenticated_teacher(request: Request) -> str | None:
+    token = request.cookies.get(SESSION_COOKIE)
+    session = teacher_sessions.get(token) if token else None
+    if session is None:
+        return None
+
+    username, expires_at = session
+    if expires_at <= time.time():
+        teacher_sessions.pop(token, None)
+        return None
+    return username
+
+
+def require_teacher(request: Request) -> str:
+    username = get_authenticated_teacher(request)
+    if username is None:
+        raise HTTPException(status_code=401, detail="Teacher login required")
+    return username
+
+
+def set_session_cookie(response: Response, token: str) -> None:
+    response.set_cookie(
+        key=SESSION_COOKIE,
+        value=token,
+        max_age=SESSION_MAX_AGE,
+        httponly=True,
+        secure=os.environ.get("COOKIE_SECURE", "").lower() in {"1", "true"},
+        samesite="lax",
+        path="/",
+    )
+
+
+@app.post("/auth/login")
+def login(payload: LoginRequest, response: Response):
+    try:
+        credentials = load_teacher_credentials(TEACHER_CREDENTIALS_FILE)
+    except (OSError, ValueError):
+        raise HTTPException(status_code=503, detail="Teacher credentials are unavailable")
+
+    credential = credentials.get(payload.username)
+    if credential is None or not verify_password(payload.password, credential):
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+
+    token = secrets.token_urlsafe(32)
+    teacher_sessions[token] = (payload.username, time.time() + SESSION_MAX_AGE)
+    set_session_cookie(response, token)
+    return {"authenticated": True, "username": payload.username}
+
+
+@app.get("/auth/session")
+def get_session(request: Request):
+    username = get_authenticated_teacher(request)
+    return {"authenticated": username is not None, "username": username}
+
+
+@app.delete("/auth/session")
+def logout(request: Request, response: Response):
+    token = request.cookies.get(SESSION_COOKIE)
+    if token:
+        teacher_sessions.pop(token, None)
+    response.delete_cookie(
+        key=SESSION_COOKIE,
+        httponly=True,
+        secure=os.environ.get("COOKIE_SECURE", "").lower() in {"1", "true"},
+        samesite="lax",
+        path="/",
+    )
+    return {"authenticated": False}
 
 # Mount the static files directory
 current_dir = Path(__file__).parent
@@ -89,7 +176,7 @@ def get_activities():
 
 
 @app.post("/activities/{activity_name}/signup")
-def signup_for_activity(activity_name: str, email: str):
+def signup_for_activity(activity_name: str, email: str, teacher: str = Depends(require_teacher)):
     """Sign up a student for an activity"""
     # Validate activity exists
     if activity_name not in activities:
@@ -111,7 +198,7 @@ def signup_for_activity(activity_name: str, email: str):
 
 
 @app.delete("/activities/{activity_name}/unregister")
-def unregister_from_activity(activity_name: str, email: str):
+def unregister_from_activity(activity_name: str, email: str, teacher: str = Depends(require_teacher)):
     """Unregister a student from an activity"""
     # Validate activity exists
     if activity_name not in activities:
